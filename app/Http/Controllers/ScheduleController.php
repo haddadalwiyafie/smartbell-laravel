@@ -21,7 +21,10 @@ class ScheduleController extends Controller
         }
 
         $schedules   = $query->get();
-        $audioTracks = AudioTrack::pluck('file_name');
+
+        $dbTracks    = AudioTrack::pluck('file_name')->toArray();
+        $usedTracks  = BellSchedule::pluck('audio_file')->unique()->toArray();
+        $audioTracks = collect(array_unique(array_merge($dbTracks, $usedTracks)))->sort()->values();
 
         return view('schedule', compact('schedules', 'days', 'dayFilter', 'audioTracks'));
     }
@@ -37,7 +40,6 @@ class ScheduleController extends Controller
             'status'     => 'required|in:Active,Inactive',
         ]);
 
-        unset($data['time_display']);
         BellSchedule::create($data);
         return redirect()->route('schedule')->with('success', 'Jadwal bel berhasil ditambahkan.');
     }
@@ -53,7 +55,6 @@ class ScheduleController extends Controller
             'status'     => 'required|in:Active,Inactive',
         ]);
 
-        unset($data['time_display']);
         $bellSchedule->update($data);
         return redirect()->route('schedule')->with('success', 'Jadwal bel berhasil diperbarui.');
     }

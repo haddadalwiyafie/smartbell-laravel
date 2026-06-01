@@ -106,7 +106,7 @@
 
                 {{-- Actions --}}
                 <div class="flex items-center gap-3 shrink-0">
-                    <button onclick="openEdit({{ $s->id }}, {{ json_encode($s->title) }}, '{{ $displayTime }}', '{{ $meridiem }}', {{ json_encode($s->audio_file) }}, {{ json_encode($s->status) }}, {{ json_encode($s->days) }})"
+                    <button onclick="openEdit({{ $s->id }}, {{ json_encode($s->title) }}, '{{ \Carbon\Carbon::createFromFormat('H:i:s', $s->time)->format('H:i') }}', {{ json_encode($s->audio_file) }}, {{ json_encode($s->status) }}, {{ json_encode($s->days) }})"
                             class="text-gray-400 hover:text-[#C0001D] transition-colors">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
@@ -154,6 +154,18 @@
         <form id="schedule-form" method="POST" action="{{ route('schedule.store') }}" class="p-6 space-y-4">
             @csrf
             <span id="method-field"></span>
+            <input type="hidden" name="edit_id" id="edit-id-field" value="">
+
+            @if($errors->any())
+            <div class="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                <p class="text-xs font-semibold text-red-700 mb-1">Please fix the following errors:</p>
+                <ul class="text-xs text-red-600 space-y-0.5">
+                    @foreach($errors->all() as $error)
+                        <li>• {{ $error }}</li>
+                    @endforeach
+                </ul>
+            </div>
+            @endif
 
             {{-- Status Banner --}}
             <div class="flex items-center justify-between rounded-lg bg-red-50/70 border-l-4 border-[#C0001D] px-4 py-3">
@@ -181,16 +193,10 @@
             <div class="grid grid-cols-2 gap-4">
                 <div>
                     <label class="text-xs font-medium text-gray-500 mb-1.5 block">Time</label>
-                    <div class="relative">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                             class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                        </svg>
-                        <input type="text" name="time_display" id="f-time" placeholder="08:25 AM" required
-                               class="w-full rounded-lg border border-gray-200 bg-gray-50/60 pl-9 pr-3 py-2.5 text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-[#C0001D] focus:bg-white transition-colors">
-                        <input type="hidden" name="time" id="f-time-hidden">
-                        <input type="hidden" name="meridiem" id="f-meridiem-hidden">
-                    </div>
+                    <input type="time" name="time_display" id="f-time" required
+                           class="w-full rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:border-[#C0001D] focus:bg-white transition-colors">
+                    <input type="hidden" name="time" id="f-time-hidden">
+                    <input type="hidden" name="meridiem" id="f-meridiem-hidden">
                 </div>
                 <div>
                     <label class="text-xs font-medium text-gray-500 mb-1.5 block">Audio Track</label>
@@ -264,45 +270,45 @@
 const ADD_ACTION = '{{ route('schedule.store') }}';
 let activeStatus = true;
 
-function toggleActive() {
-    activeStatus = !activeStatus;
+function setActiveStatus(isActive) {
+    activeStatus = isActive;
     const toggle = document.getElementById('status-toggle');
-    const knob = document.getElementById('toggle-knob');
-    const desc = document.getElementById('status-desc');
-    const input = document.getElementById('status-input');
-    toggle.className = 'relative inline-flex h-5 w-9 items-center rounded-full transition-colors ' + (activeStatus ? 'bg-[#C0001D]' : 'bg-gray-200');
-    knob.className = 'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ' + (activeStatus ? 'translate-x-[18px]' : 'translate-x-[2px]');
-    input.value = activeStatus ? 'Active' : 'Inactive';
-    desc.textContent = activeStatus
+    const knob   = document.getElementById('toggle-knob');
+    const desc   = document.getElementById('status-desc');
+    const input  = document.getElementById('status-input');
+    toggle.className = 'relative inline-flex h-5 w-9 items-center rounded-full transition-colors ' + (isActive ? 'bg-[#C0001D]' : 'bg-gray-200');
+    knob.className   = 'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ' + (isActive ? 'translate-x-[18px]' : 'translate-x-[2px]');
+    input.value      = isActive ? 'Active' : 'Inactive';
+    desc.textContent = isActive
         ? 'Currently active and participating in the master schedule.'
         : 'Currently inactive. This bell will not ring.';
 }
+
+function toggleActive() { setActiveStatus(!activeStatus); }
 
 function openAdd() {
     document.getElementById('modal-title').textContent = 'Add New Bell';
     document.getElementById('schedule-form').action = ADD_ACTION;
     document.getElementById('method-field').innerHTML = '';
+    document.getElementById('edit-id-field').value = '';
     document.getElementById('f-title').value = '';
     document.getElementById('f-time').value = '';
     document.getElementById('f-audio').value = '';
     document.querySelectorAll('.day-check').forEach(cb => cb.checked = false);
-    activeStatus = true;
-    toggleActive(); toggleActive(); // reset to active
+    setActiveStatus(true);
     document.getElementById('schedule-modal').classList.remove('hidden');
 }
 
-function openEdit(id, title, time, meridiem, audio, status, days) {
+function openEdit(id, title, time24, audio, status, days) {
     document.getElementById('modal-title').textContent = 'Edit Bell Schedule';
     document.getElementById('schedule-form').action = '/schedule/' + id;
     document.getElementById('method-field').innerHTML = '<input type="hidden" name="_method" value="PUT">';
+    document.getElementById('edit-id-field').value = id;
     document.getElementById('f-title').value = title;
-    document.getElementById('f-time').value = time + ' ' + meridiem;
+    document.getElementById('f-time').value = time24; // "HH:MM" 24-hour
     document.getElementById('f-audio').value = audio;
-    document.querySelectorAll('.day-check').forEach(cb => {
-        cb.checked = days.includes(cb.value);
-    });
-    activeStatus = status !== 'Active';
-    toggleActive();
+    document.querySelectorAll('.day-check').forEach(cb => { cb.checked = days.includes(cb.value); });
+    setActiveStatus(status === 'Active');
     document.getElementById('schedule-modal').classList.remove('hidden');
 }
 
@@ -310,23 +316,14 @@ function closeModal() {
     document.getElementById('schedule-modal').classList.add('hidden');
 }
 
-// Parse time before submit
+// Convert time input (HH:MM 24h) → hidden fields before submit
 document.getElementById('schedule-form').addEventListener('submit', function() {
-    const raw = document.getElementById('f-time').value.trim();
-    const parts = raw.split(/\s+/);
-    const timePart = parts[0] || '';
-    const meridPart = parts[1] || 'AM';
-
-    // Convert to 24h for storage
-    let [h, m] = timePart.split(':').map(Number);
-    if (isNaN(h)) h = 0;
-    if (isNaN(m)) m = 0;
-    if (meridPart === 'PM' && h < 12) h += 12;
-    if (meridPart === 'AM' && h === 12) h = 0;
-    const hh = String(h).padStart(2, '0');
-    const mm = String(m).padStart(2, '0');
-    document.getElementById('f-time-hidden').value = hh + ':' + mm + ':00';
-    document.getElementById('f-meridiem-hidden').value = meridPart;
+    const raw = document.getElementById('f-time').value; // "HH:MM" from <input type="time">
+    if (raw) {
+        const [h, m] = raw.split(':').map(Number);
+        document.getElementById('f-time-hidden').value    = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':00';
+        document.getElementById('f-meridiem-hidden').value = h >= 12 ? 'PM' : 'AM';
+    }
 });
 
 // View toggle
@@ -351,6 +348,34 @@ function requestDelete(id, title) {
 document.getElementById('delete-ok').addEventListener('click', () => {
     if (pendingDeleteId) document.getElementById('del-form-' + pendingDeleteId).submit();
 });
+
+// Auto-reopen modal with old values after validation failure
+@if($errors->any())
+@php
+    $oldDays   = old('days', []);
+    $oldStatus = old('status', 'Active');
+    $oldEditId = old('edit_id', '');
+    $isEditRetry = old('_method') === 'PUT' && $oldEditId;
+@endphp
+(function() {
+    @if($isEditRetry)
+    document.getElementById('modal-title').textContent = 'Edit Bell Schedule';
+    document.getElementById('schedule-form').action = '/schedule/{{ $oldEditId }}';
+    document.getElementById('method-field').innerHTML = '<input type="hidden" name="_method" value="PUT">';
+    document.getElementById('edit-id-field').value = '{{ $oldEditId }}';
+    @else
+    document.getElementById('modal-title').textContent = 'Add New Bell';
+    document.getElementById('schedule-form').action = ADD_ACTION;
+    @endif
+    document.getElementById('f-title').value = @json(old('title', ''));
+    document.getElementById('f-time').value  = @json(old('time_display', ''));
+    document.getElementById('f-audio').value = @json(old('audio_file', ''));
+    const oldDays = @json($oldDays);
+    document.querySelectorAll('.day-check').forEach(cb => { cb.checked = oldDays.includes(cb.value); });
+    setActiveStatus(@json($oldStatus) === 'Active');
+    document.getElementById('schedule-modal').classList.remove('hidden');
+})();
+@endif
 </script>
 
 </x-layout>
