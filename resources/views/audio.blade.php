@@ -40,21 +40,20 @@
 
             <label class="text-xs font-medium text-gray-500 mb-1.5 mt-4 block">Voice Selection</label>
             <div class="flex gap-3">
-                <select class="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-[#C0001D] transition-colors">
-                    <option>English (US) - Female</option>
-                    <option>English (US) - Male</option>
-                    <option>English (UK) - Female</option>
-                    <option>English (UK) - Male</option>
+                <select id="tts-voice-select" class="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:border-[#C0001D] transition-colors">
+                    <option value="">Loading voices...</option>
                 </select>
-                <button class="flex items-center justify-center gap-2 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium py-2 px-4 rounded-lg transition-colors">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                    Play Preview
+                <button id="tts-preview-btn" onclick="ttsPlay('preview')"
+                        class="flex items-center justify-center gap-2 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium py-2 px-4 rounded-lg transition-colors">
+                    <svg id="tts-preview-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <span id="tts-preview-label">Play Preview</span>
                 </button>
-                <button class="flex items-center justify-center gap-2 bg-[#C0001D] hover:bg-[#a0001a] text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <button id="tts-broadcast-btn" onclick="ttsPlay('broadcast')"
+                        class="flex items-center justify-center gap-2 bg-[#C0001D] hover:bg-[#a0001a] text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors">
+                    <svg id="tts-broadcast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14"/>
                     </svg>
-                    Broadcast
+                    <span id="tts-broadcast-label">Broadcast</span>
                 </button>
             </div>
         </div>
@@ -260,6 +259,97 @@ if (ttsText) {
     ttsText.addEventListener('input', () => {
         document.getElementById('tts-count').textContent = ttsText.value.length + ' / 250 characters';
     });
+}
+
+// ── Web Speech API ──────────────────────────────────────────────
+let ttsVoices = [];
+let ttsSpeaking = false;
+let ttsMode = null;
+
+function loadVoices() {
+    ttsVoices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'));
+    const sel = document.getElementById('tts-voice-select');
+    if (!sel) return;
+    sel.innerHTML = '';
+    if (ttsVoices.length === 0) {
+        sel.innerHTML = '<option value="">No voices available</option>';
+        return;
+    }
+    ttsVoices.forEach((v, i) => {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = v.name + (v.localService ? '' : ' ✦');
+        sel.appendChild(opt);
+    });
+}
+
+if (typeof speechSynthesis !== 'undefined') {
+    speechSynthesis.onvoiceschanged = loadVoices;
+    loadVoices();
+}
+
+const STOP_ICON = '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>';
+const PLAY_ICON = '<polygon points="5 3 19 12 5 21 5 3"/>';
+const WAVE_ICON = '<circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14"/>';
+
+function ttsSetState(speaking, mode) {
+    ttsSpeaking = speaking;
+    ttsMode     = mode;
+
+    const previewIcon  = document.getElementById('tts-preview-icon');
+    const previewLabel = document.getElementById('tts-preview-label');
+    const broadIcon    = document.getElementById('tts-broadcast-icon');
+    const broadLabel   = document.getElementById('tts-broadcast-label');
+
+    if (speaking && mode === 'preview') {
+        previewIcon.innerHTML = STOP_ICON;
+        previewLabel.textContent = 'Stop';
+        broadIcon.innerHTML = WAVE_ICON;
+        broadLabel.textContent = 'Broadcast';
+    } else if (speaking && mode === 'broadcast') {
+        previewIcon.innerHTML = PLAY_ICON;
+        previewLabel.textContent = 'Play Preview';
+        broadIcon.innerHTML = STOP_ICON;
+        broadLabel.textContent = 'Stop';
+    } else {
+        previewIcon.innerHTML = PLAY_ICON;
+        previewLabel.textContent = 'Play Preview';
+        broadIcon.innerHTML = WAVE_ICON;
+        broadLabel.textContent = 'Broadcast';
+    }
+}
+
+function ttsPlay(mode) {
+    if (!('speechSynthesis' in window)) {
+        alert('Your browser does not support Text-to-Speech.');
+        return;
+    }
+
+    // If already speaking, stop
+    if (ttsSpeaking) {
+        speechSynthesis.cancel();
+        ttsSetState(false, null);
+        return;
+    }
+
+    const text = document.getElementById('tts-text').value.trim();
+    if (!text) {
+        document.getElementById('tts-text').focus();
+        return;
+    }
+
+    const voiceIdx   = parseInt(document.getElementById('tts-voice-select').value);
+    const utterance  = new SpeechSynthesisUtterance(text);
+    if (ttsVoices[voiceIdx]) utterance.voice = ttsVoices[voiceIdx];
+    utterance.rate   = 0.95;
+    utterance.pitch  = 1;
+    utterance.volume = 1;
+
+    utterance.onstart = () => ttsSetState(true, mode);
+    utterance.onend   = () => ttsSetState(false, null);
+    utterance.onerror = () => ttsSetState(false, null);
+
+    speechSynthesis.speak(utterance);
 }
 
 // MP3 drag drop visual
