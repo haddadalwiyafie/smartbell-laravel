@@ -267,7 +267,9 @@ let ttsSpeaking = false;
 let ttsMode = null;
 
 function loadVoices() {
-    ttsVoices = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'));
+    const all = window.speechSynthesis.getVoices();
+    ttsVoices  = all.filter(v => v.lang.startsWith('en') || v.lang.startsWith('id'));
+
     const sel = document.getElementById('tts-voice-select');
     if (!sel) return;
     sel.innerHTML = '';
@@ -275,11 +277,27 @@ function loadVoices() {
         sel.innerHTML = '<option value="">No voices available</option>';
         return;
     }
+
+    // Group by language
+    const groups = { 'Indonesian': [], 'English': [] };
     ttsVoices.forEach((v, i) => {
-        const opt = document.createElement('option');
-        opt.value = i;
-        opt.textContent = v.name + (v.localService ? '' : ' ✦');
-        sel.appendChild(opt);
+        const label = v.name + (v.localService ? '' : ' ✦');
+        const entry = { i, label };
+        if (v.lang.startsWith('id')) groups['Indonesian'].push(entry);
+        else                         groups['English'].push(entry);
+    });
+
+    Object.entries(groups).forEach(([groupName, items]) => {
+        if (items.length === 0) return;
+        const og = document.createElement('optgroup');
+        og.label = groupName;
+        items.forEach(({ i, label }) => {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.textContent = label;
+            og.appendChild(opt);
+        });
+        sel.appendChild(og);
     });
 }
 
