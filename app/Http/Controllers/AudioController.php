@@ -41,4 +41,24 @@ class AudioController extends Controller
         $audioTrack->delete();
         return redirect()->route('audio')->with('success', 'Audio berhasil dihapus.');
     }
+
+    public function stream($id)
+    {
+        $audioTrack = AudioTrack::findOrFail($id);
+        $path =  Storage::url($audioTrack->file_path);
+
+        if (!file_exists($path)) {
+            return response()->json([
+                'error' => 'File audio tidak ditemukan.',
+                'path' => $path
+                ], 404);
+        }
+
+        $mimeType = str_ends_with($audioTrack->file_path, '.wav') ? 'audio/wav' : 'audio/mpeg';
+
+        return response()->file($path, [
+            'Content-Type'  => $mimeType,
+            'Accept-Ranges' => 'bytes',
+        ]);
+    }
 }

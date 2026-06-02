@@ -80,9 +80,21 @@
                     <p id="drop-sub" class="text-xs text-gray-400 mt-1">or click to browse (.mp3, .wav)</p>
                     <input type="file" id="mp3-file-input" name="audio_file" accept=".mp3,.wav" class="hidden">
                 </div>
-                @error('audio_file')
-                    <p class="text-xs text-red-500 mt-2">{{ $message }}</p>
-                @enderror
+               @if(session('success'))
+                    <div class="text-green-600">{{ session('success') }}</div>
+                @endif
+
+                @if(session('error'))
+                    <div class="text-red-600">{{ session('error') }}</div>
+                @endif
+
+                @if($errors->any())
+                    <div class="text-red-600">
+                        @foreach($errors->all() as $e)
+                            <p>{{ $e }}</p>
+                        @endforeach
+                    </div>
+                @endif
                 <button type="submit" class="mt-3 w-full py-2 bg-[#C0001D] hover:bg-[#a0001a] text-white text-sm font-medium rounded-lg transition-colors">
                     Upload
                 </button>
@@ -120,6 +132,7 @@
         </div>
 
         {{-- Rows --}}
+{{-- Rows --}}
         <div class="divide-y divide-gray-50">
             @forelse($tracks as $track)
             <div class="grid grid-cols-[3fr_1fr_1.5fr_1fr] items-center px-6 py-4 hover:bg-gray-50/60 transition-colors">
@@ -132,8 +145,14 @@
                 <span class="text-sm text-gray-500 tabular-nums">{{ $track->duration ?? '—' }}</span>
                 <span class="text-sm text-gray-500">{{ $track->created_at->format('M d, Y') }}</span>
                 <div class="flex items-center justify-end gap-3">
-                    <button class="text-gray-400 hover:text-[#C0001D] transition-colors">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    {{-- Play/Pause Button --}}
+                    <button
+                        class="audio-play-btn text-gray-400 hover:text-[#C0001D] transition-colors"
+                        data-url="{{ Storage::url($track->file_path) }}"
+                        data-id="{{ $track->id }}">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                            <polygon points="5 3 19 12 5 21 5 3"/>
+                        </svg>
                     </button>
                     <form method="POST" action="{{ route('audio.destroy', $track) }}" id="del-{{ $track->id }}">
                         @csrf @method('DELETE')
@@ -251,9 +270,58 @@
         </div>
     </div>
 </div>
+{{-- Hidden shared audio player --}}
+<audio id="global-audio"></audio>
 
 <script>
-// TTS character count
+// ── Audio Player ────────────────────────────────────────────────
+const globalAudio = document.getElementById('global-audio');
+let activeBtn = null;
+
+const PLAY_SVG  = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+const PAUSE_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+
+function resetBtn(btn) {
+    if (btn) {
+        btn.innerHTML = PLAY_SVG;
+        btn.classList.remove('text-[#C0001D]');
+        btn.classList.add('text-gray-400');
+    }
+}
+
+document.querySelectorAll('.audio-play-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const url = btn.dataset.url;
+
+        // Clicking the currently playing track → pause it
+        if (activeBtn === btn && !globalAudio.paused) {
+            globalAudio.pause();
+            resetBtn(btn);
+            activeBtn = null;
+            return;
+        }
+
+        // Clicking a different track → stop previous, play new
+        resetBtn(activeBtn);
+        globalAudio.src = url;
+        globalAudio.play().then(() => {
+            activeBtn = btn;
+            btn.innerHTML = PAUSE_SVG;
+            btn.classList.remove('text-gray-400');
+            btn.classList.add('text-[#C0001D]');
+        }).catch(err => {
+            console.error('Playback error:', err);
+        });
+    });
+});
+
+// Reset button when audio ends naturally
+globalAudio.addEventListener('ended', () => {
+    resetBtn(activeBtn);
+    activeBtn = null;
+});
+
+// ── TTS character count ─────────────────────────────────────────
 const ttsText = document.getElementById('tts-text');
 if (ttsText) {
     ttsText.addEventListener('input', () => {
@@ -268,123 +336,82 @@ let ttsMode = null;
 
 function loadVoices() {
     const all = window.speechSynthesis.getVoices();
-    ttsVoices  = all.filter(v => v.lang.startsWith('en') || v.lang.startsWith('id'));
-
+    ttsVoices = all.filter(v => v.lang.startsWith('en') || v.lang.startsWith('id'));
     const sel = document.getElementById('tts-voice-select');
     if (!sel) return;
     sel.innerHTML = '';
-    if (ttsVoices.length === 0) {
-        sel.innerHTML = '<option value="">No voices available</option>';
-        return;
-    }
-
-    // Group by language
+    if (ttsVoices.length === 0) { sel.innerHTML = '<option value="">No voices available</option>'; return; }
     const groups = { 'Indonesian': [], 'English': [] };
     ttsVoices.forEach((v, i) => {
         const label = v.name + (v.localService ? '' : ' ✦');
-        const entry = { i, label };
-        if (v.lang.startsWith('id')) groups['Indonesian'].push(entry);
-        else                         groups['English'].push(entry);
+        if (v.lang.startsWith('id')) groups['Indonesian'].push({ i, label });
+        else groups['English'].push({ i, label });
     });
-
     Object.entries(groups).forEach(([groupName, items]) => {
-        if (items.length === 0) return;
+        if (!items.length) return;
         const og = document.createElement('optgroup');
         og.label = groupName;
         items.forEach(({ i, label }) => {
             const opt = document.createElement('option');
-            opt.value = i;
-            opt.textContent = label;
+            opt.value = i; opt.textContent = label;
             og.appendChild(opt);
         });
         sel.appendChild(og);
     });
 }
-
-if (typeof speechSynthesis !== 'undefined') {
-    speechSynthesis.onvoiceschanged = loadVoices;
-    loadVoices();
-}
+if (typeof speechSynthesis !== 'undefined') { speechSynthesis.onvoiceschanged = loadVoices; loadVoices(); }
 
 const STOP_ICON = '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>';
 const PLAY_ICON = '<polygon points="5 3 19 12 5 21 5 3"/>';
 const WAVE_ICON = '<circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 010 8.49m-8.48-.01a6 6 0 010-8.49m11.31-2.82a10 10 0 010 14.14m-14.14 0a10 10 0 010-14.14"/>';
 
 function ttsSetState(speaking, mode) {
-    ttsSpeaking = speaking;
-    ttsMode     = mode;
-
+    ttsSpeaking = speaking; ttsMode = mode;
     const previewIcon  = document.getElementById('tts-preview-icon');
     const previewLabel = document.getElementById('tts-preview-label');
     const broadIcon    = document.getElementById('tts-broadcast-icon');
     const broadLabel   = document.getElementById('tts-broadcast-label');
-
     if (speaking && mode === 'preview') {
-        previewIcon.innerHTML = STOP_ICON;
-        previewLabel.textContent = 'Stop';
-        broadIcon.innerHTML = WAVE_ICON;
-        broadLabel.textContent = 'Broadcast';
+        previewIcon.innerHTML = STOP_ICON; previewLabel.textContent = 'Stop';
+        broadIcon.innerHTML = WAVE_ICON; broadLabel.textContent = 'Broadcast';
     } else if (speaking && mode === 'broadcast') {
-        previewIcon.innerHTML = PLAY_ICON;
-        previewLabel.textContent = 'Play Preview';
-        broadIcon.innerHTML = STOP_ICON;
-        broadLabel.textContent = 'Stop';
+        previewIcon.innerHTML = PLAY_ICON; previewLabel.textContent = 'Play Preview';
+        broadIcon.innerHTML = STOP_ICON; broadLabel.textContent = 'Stop';
     } else {
-        previewIcon.innerHTML = PLAY_ICON;
-        previewLabel.textContent = 'Play Preview';
-        broadIcon.innerHTML = WAVE_ICON;
-        broadLabel.textContent = 'Broadcast';
+        previewIcon.innerHTML = PLAY_ICON; previewLabel.textContent = 'Play Preview';
+        broadIcon.innerHTML = WAVE_ICON; broadLabel.textContent = 'Broadcast';
     }
 }
 
 function ttsPlay(mode) {
-    if (!('speechSynthesis' in window)) {
-        alert('Your browser does not support Text-to-Speech.');
-        return;
-    }
-
-    // If already speaking, stop
-    if (ttsSpeaking) {
-        speechSynthesis.cancel();
-        ttsSetState(false, null);
-        return;
-    }
-
+    if (!('speechSynthesis' in window)) { alert('Your browser does not support Text-to-Speech.'); return; }
+    if (ttsSpeaking) { speechSynthesis.cancel(); ttsSetState(false, null); return; }
     const text = document.getElementById('tts-text').value.trim();
-    if (!text) {
-        document.getElementById('tts-text').focus();
-        return;
-    }
-
-    const voiceIdx   = parseInt(document.getElementById('tts-voice-select').value);
-    const utterance  = new SpeechSynthesisUtterance(text);
+    if (!text) { document.getElementById('tts-text').focus(); return; }
+    const voiceIdx = parseInt(document.getElementById('tts-voice-select').value);
+    const utterance = new SpeechSynthesisUtterance(text);
     if (ttsVoices[voiceIdx]) utterance.voice = ttsVoices[voiceIdx];
-    utterance.rate   = 0.95;
-    utterance.pitch  = 1;
-    utterance.volume = 1;
-
+    utterance.rate = 0.95; utterance.pitch = 1; utterance.volume = 1;
     utterance.onstart = () => ttsSetState(true, mode);
     utterance.onend   = () => ttsSetState(false, null);
     utterance.onerror = () => ttsSetState(false, null);
-
     speechSynthesis.speak(utterance);
 }
 
-// MP3 drag drop visual
+// ── Drag & Drop ─────────────────────────────────────────────────
 const dropZone = document.getElementById('drop-zone');
 if (dropZone) {
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-[#C0001D]', 'bg-red-50/50'); });
     dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('border-[#C0001D]', 'bg-red-50/50'); });
     dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropZone.classList.remove('border-[#C0001D]', 'bg-red-50/50');
+        e.preventDefault(); dropZone.classList.remove('border-[#C0001D]', 'bg-red-50/50');
         const f = e.dataTransfer.files[0];
         if (f) document.getElementById('drop-text').textContent = f.name;
         document.getElementById('mp3-file-input').files = e.dataTransfer.files;
     });
 }
 
-// Tab switching
+// ── Tab switching ───────────────────────────────────────────────
 function switchTab(tab) {
     document.getElementById('panel-upload').classList.toggle('hidden', tab !== 'upload');
     document.getElementById('panel-tts').classList.toggle('hidden', tab !== 'tts');
@@ -396,7 +423,7 @@ function switchTab(tab) {
         : 'tab-btn py-3 px-1 mr-6 text-sm font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-600 transition-colors';
 }
 
-// Delete confirm
+// ── Delete confirm ──────────────────────────────────────────────
 let pendingDeleteId = null;
 function confirmDelete(id, name) {
     pendingDeleteId = id;

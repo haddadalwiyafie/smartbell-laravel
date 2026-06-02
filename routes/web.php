@@ -17,6 +17,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('/audio', [AudioController::class, 'index'])->name('audio');
+    Route::get('/audio/stream/{id}', [AudioController::class, 'stream'])->name('audio.stream');
+
     Route::post('/audio/upload', [AudioController::class, 'upload'])->name('audio.upload');
     Route::delete('/audio/{audioTrack}', [AudioController::class, 'destroy'])->name('audio.destroy');
 
